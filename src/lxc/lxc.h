@@ -44,6 +44,11 @@ extern "C" {
 #include <lxc/cgroup.h>
 #include <lxc/monitor.h>
 
+/* flags for lxc_cinit */
+#define LXC_MOUNT_PROC 1
+#define LXC_MOUNT_SYSFS 2
+#define LXC_START_INITLOG 4
+
 /*
  * Create the container object. Creates the /lxc/<name> directory
  * and fills it with the files corresponding to the configuration
@@ -69,10 +74,10 @@ extern int lxc_destroy(const char *name);
  * been created before with lxc_create.
  * @name     : the name of the container
  * @argv     : an array of char * corresponding to the commande line
+ * @flags    : start flags
  * Returns 0 on sucess, < 0 otherwise
  */
-extern int lxc_start(const char *name, char *argv[]);
-
+extern int lxc_start(const char *name, char *argv[], unsigned long flags);
 /*
  * Stop the container previously started with lxc_start, all
  * the processes running inside this container will be killed.

@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	err = lxc_start(name, args);
+	err = lxc_start(name, args, LXC_START_INITLOG);
 	if (err) {
 		fprintf(stderr, "%s\n", lxc_strerror(err));
 		err = 1;

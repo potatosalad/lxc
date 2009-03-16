@@ -5,6 +5,7 @@
  *
  * Authors:
  * Daniel Lezcano <dlezcano at fr.ibm.com>
+ * Dietmar Maurer <dietmar at proxmox.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -126,7 +127,7 @@ static int setup_tty_service(const char *name, int *ttyfd)
 	int fd;
 	struct sockaddr_un addr = { 0 };
 	char *offset = &addr.sun_path[1];
-	
+
 	strcpy(offset, name);
 	addr.sun_path[0] = '\0';
 
@@ -145,7 +146,7 @@ static int setup_tty_service(const char *name, int *ttyfd)
 	return 0;
 }
 
-static int sigchld_handler(int fd, void *data, 
+static int sigchld_handler(int fd, void *data,
 			   struct lxc_epoll_descr *descr)
 {
 	pid_t *pid = data;
@@ -179,13 +180,13 @@ static int ttyservice_handler(int fd, void *data,
 {
 	int conn, ttynum, val = 1, ret = -1;
 	struct lxc_tty_info *tty_info = data;
-	
+
 	conn = accept(fd, NULL, 0);
 	if (conn < 0) {
 		lxc_log_syserror("failed to accept tty client");
 		return -1;
 	}
-	
+
 	if (setsockopt(conn, SOL_SOCKET, SO_PASSCRED, &val, sizeof(val))) {
 		lxc_log_syserror("failed to enable credential on socket");
 		goto out_close;
@@ -203,13 +204,13 @@ static int ttyservice_handler(int fd, void *data,
 	if (tty_info->pty_info[ttynum].busy)
 		goto out_close;
 
-	if (lxc_af_unix_send_fd(conn, tty_info->pty_info[ttynum].master, 
+	if (lxc_af_unix_send_fd(conn, tty_info->pty_info[ttynum].master,
 				NULL, 0) < 0) {
 		lxc_log_error("failed to send tty to client");
 		goto out_close;
 	}
 
-	if (lxc_mainloop_add_handler(descr, conn, 
+	if (lxc_mainloop_add_handler(descr, conn,
 				     ttyclient_handler, tty_info)) {
 		lxc_log_error("failed to add tty client handler");
 		goto out_close;
@@ -237,7 +238,7 @@ static int mainloop(const char *name, pid_t pid, int sigfd,
 		goto out_sigfd;
 	}
 
-	/* sigfd + nb tty + tty service 
+	/* sigfd + nb tty + tty service
 	 * if tty is enabled */
 	nfds = tty_info->nbtty + 1 + tty_info->nbtty ? 1 : 0;
 
@@ -252,8 +253,8 @@ static int mainloop(const char *name, pid_t pid, int sigfd,
 	}
 
 	if (tty_info->nbtty) {
-		if (lxc_mainloop_add_handler(&descr, ttyfd, 
-					     ttyservice_handler, 
+		if (lxc_mainloop_add_handler(&descr, ttyfd,
+					     ttyservice_handler,
 					     (void *)tty_info)) {
 			lxc_log_error("failed to add handler for the tty");
 			goto out_mainloop_open;
@@ -274,7 +275,7 @@ out_sigfd:
 	goto out;
 }
 
-int lxc_start(const char *name, char *argv[])
+int lxc_start(const char *name, char *argv[], unsigned long flags)
 {
 	struct lxc_tty_info tty_info = { 0 };
 	sigset_t oldmask;
@@ -291,13 +292,13 @@ int lxc_start(const char *name, char *argv[])
 
 	/* Begin the set the state to STARTING*/
 	if (lxc_setstate(name, STARTING)) {
-		lxc_log_error("failed to set state '%s'", 
+		lxc_log_error("failed to set state '%s'",
 			      lxc_state2str(STARTING));
 		goto out;
 	}
 
 	/* If we are not attached to a tty, disable it */
-	if (ttyname_r(0, tty, sizeof(tty))) 
+	if (ttyname_r(0, tty, sizeof(tty)))
 		tty[0] = '\0';
 
 	if (lxc_create_tty(name, &tty_info)) {
@@ -324,6 +325,29 @@ int lxc_start(const char *name, char *argv[])
 	LXC_TTY_ADD_HANDLER(SIGINT);
 	LXC_TTY_ADD_HANDLER(SIGQUIT);
 
+	// open command socket
+	struct sockaddr_un addr;
+
+	char *cmdsock = strdup_printf (LXCPATH "/%s/cmdsock", name);
+	unlink (cmdsock);
+
+	int sock = socket (PF_UNIX, SOCK_STREAM, 0);
+	if (sock == -1) {
+		lxc_log_syserror ("faild to create socket");
+		goto out;
+	}
+
+	memset(&addr, 0, sizeof(struct sockaddr_un));
+
+	addr.sun_family = AF_UNIX;
+	strncpy(addr.sun_path, cmdsock, sizeof(addr.sun_path) - 1);
+
+	if (bind(sock, (struct sockaddr *) &addr,
+		 sizeof(struct sockaddr_un)) == -1) {
+		lxc_log_syserror ("command socket bind failed");
+		goto out;
+	}
+
 	clone_flags = CLONE_NEWPID|CLONE_NEWIPC|CLONE_NEWNS;
 	if (conf_has_utsname(name))
 		clone_flags |= CLONE_NEWUTS;
@@ -348,7 +372,7 @@ int lxc_start(const char *name, char *argv[])
 
 		/* Be sure we don't inherit this after the exec */
 		fcntl(sv[0], F_SETFD, FD_CLOEXEC);
-		
+
 		/* Tell our father he can begin to configure the container */
 		if (write(sv[0], &sync, sizeof(sync)) < 0) {
 			lxc_log_syserror("failed to write socket");
@@ -375,20 +399,37 @@ int lxc_start(const char *name, char *argv[])
 			goto out_child;
 		}
 
-		execvp(argv[0], argv);
+		char *sockstr = strdup_printf ("SOCK=%d\n", sock);
+		char *flagsstr = strdup_printf ("FLAGS=%ul\n", flags);
+		char *envp[] = {sockstr, flagsstr, NULL};
+
+		int argc = 0;
+		while (argv[argc]) argc++;
+
+		char **newargv = calloc (argc + 2, sizeof (char*));
+
+		newargv[0] = "[lxc-cinit]";
+		int i = 0;
+		while (argv[i])  {
+			newargv[i + 1] = argv[i];
+			i++;
+		}
+
+		execve("/sbin/lxc-cinit", newargv, envp);
+
 		lxc_log_syserror("failed to exec %s", argv[0]);
 
 		err = LXC_ERROR_WRONG_COMMAND;
 		/* If the exec fails, tell that to our father */
 		if (write(sv[0], &err, sizeof(err)) < 0)
 			lxc_log_syserror("failed to write the socket");
-		
+
 	out_child:
 		exit(err);
 	}
 
 	close(sv[0]);
-	
+
 	/* Wait for the child to be ready */
 	if (read(sv[1], &sync, sizeof(sync)) < 0) {
 		lxc_log_syserror("failed to read the socket");
@@ -432,7 +473,7 @@ int lxc_start(const char *name, char *argv[])
 		lxc_log_syserror("failed to open '%s'", init);
 		goto err_write;
 	}
-	
+
 	if (write(fd, val, strlen(val)) < 0) {
 		lxc_log_syserror("failed to write the init pid");
 		goto err_write;
@@ -441,7 +482,7 @@ int lxc_start(const char *name, char *argv[])
 	close(fd);
 
 	if (lxc_setstate(name, RUNNING)) {
-		lxc_log_error("failed to set state to %s", 
+		lxc_log_error("failed to set state to %s",
 			      lxc_state2str(RUNNING));
 		goto err_state_failed;
 	}

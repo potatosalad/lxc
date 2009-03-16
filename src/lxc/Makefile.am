@@ -57,6 +57,7 @@ bin_SCRIPTS = \
 bin_PROGRAMS = \
 	lxc-unshare \
 	lxc-init \
+	lxc-cinit \
 	lxc-create \
 	lxc-destroy \
 	lxc-stop \
@@ -78,6 +79,10 @@ lxc_unshare_LDADD = liblxc.la
 
 lxc_init_SOURCES = lxc_init.c
 lxc_init_LDADD = liblxc.la
+
+lxc_cinit_SOURCES = lxc_cinit.c
+lxc_cinit_LDADD = liblxc.la -lc -lutil
+lxc_cinit_LDFLAGS = -all-static
 
 lxc_create_SOURCES = lxc_create.c lxc_config.c lxc_config.h
 lxc_create_LDADD = liblxc.la
