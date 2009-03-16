@@ -46,43 +46,41 @@ void usage(char *cmd)
 	_exit(1);
 }
 
-static int
-proxy_handler(int fd, void *data, struct lxc_epoll_descr *descr)
+static int proxy_handler(int fd, void *data, struct lxc_epoll_descr *descr)
 {
 	char buf[1024];
 	int n_read;
 	int outfd = (int)data;
 
-	if ((n_read = read (fd, buf, sizeof(buf))) <= 0) {
+	n_read = read(fd, buf, sizeof(buf));
+	if (n_read <= 0) {
 		lxc_mainloop_del_handler(descr, fd);
-		close (fd);
+		close(fd);
 		return 1;
 	}
-	write (outfd, buf, n_read);
+	write(outfd, buf, n_read);
 
 	return 0;
 }
 
-static int
-signal_handler(int fd, void *data, struct lxc_epoll_descr *descr)
+static int signal_handler(int fd, void *data, struct lxc_epoll_descr *descr)
 {
 	int cmdid = (int)data;
 
-	lxc_exec_kill (cmdsock, cmdid, SIGTERM);
+	lxc_exec_kill(cmdsock, cmdid, SIGTERM);
 
-	// simply end main loop
+	/* simply end main loop */
 	return 1;
 }
 
-static int
-mainloop (int fd, int sigfd, int cmdid)
+static int mainloop(int fd, int sigfd, int cmdid)
 {
 	struct lxc_epoll_descr descr;
 	int ret = -1;
 
 
-	if (lxc_mainloop_open (1, &descr)) {
-		lxc_log_error ("failed to create mainloop");
+	if (lxc_mainloop_open(1, &descr)) {
+		lxc_log_error("failed to create mainloop");
 		return -1;
 	}
 
@@ -107,8 +105,7 @@ mainloop (int fd, int sigfd, int cmdid)
 }
 
 
-static int
-setup_signal_fd(sigset_t *oldmask)
+static int setup_signal_fd(sigset_t *oldmask)
 {
 	sigset_t mask;
 	int fd;
@@ -147,8 +144,9 @@ setup_signal_fd(sigset_t *oldmask)
 int main(int argc, char *argv[])
 {
 	char *name = NULL;
+	char *args[] = { NULL };
 	sigset_t oldmask;
-	int opt;
+	int opt, sigfd, cmdid, cmdfd, waitres;
 
 	while ((opt = getopt(argc, argv, "n:")) != -1) {
 		switch (opt) {
@@ -162,29 +160,27 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 
 
-	int sigfd = setup_signal_fd (&oldmask);
+	sigfd = setup_signal_fd(&oldmask);
 	if (sigfd < 0) {
 		lxc_log_error("failed to set signal fd handler");
 		return -1;
 	}
 
-	cmdsock = strdup_printf (LXCPATH "/%s/cmdsock", name);
+	cmdsock = strdup_printf(LXCPATH "/%s/cmdsock", name);
 
-	int cmdid;
-	char *args[] = { NULL };
-	int cmdfd = lxc_exec_cmd (cmdsock, "enter", args, &cmdid);
+	cmdfd = lxc_exec_cmd(cmdsock, "enter", args, &cmdid);
 	if (cmdid <= 0) {
-		lxc_log_error ("enter failed");
+		lxc_log_error("enter failed");
 		return 1;
 	}
 
-	fprintf (stderr, "entering container %s\n", name);
+	fprintf(stderr, "entering container %s\n", name);
 
-	mainloop (cmdfd, sigfd, cmdid);
+	mainloop(cmdfd, sigfd, cmdid);
 
-	close (cmdfd);
+	close(cmdfd);
 
-	int waitres = lxc_exec_wait (cmdsock, cmdid);
+	waitres = lxc_exec_wait(cmdsock, cmdid);
 
 	return waitres;
 }

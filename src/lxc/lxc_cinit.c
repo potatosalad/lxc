@@ -49,7 +49,7 @@
 #include <sys/param.h>
 #include <termios.h>
 #include <sys/ioctl.h>
-#include <pty.h>  /* for openpty and forkpty */
+#include <pty.h>
 #include <sys/mount.h>
 
 #include "mainloop.h"
@@ -68,48 +68,50 @@ struct worker {
 	int done;
 };
 
-static void
-add_worker (pid_t pid)
+static void add_worker(pid_t pid)
 {
-	struct lxc_list *l = malloc (sizeof (*l));
-	struct worker *w = malloc (sizeof (*w));
+	struct lxc_list *l = malloc(sizeof(*l));
+	struct worker *w = malloc(sizeof(*w));
 
 	w->pid = pid;
 
-	lxc_list_add_elem (l, w);
-	lxc_list_add (workers, l);
+	lxc_list_add_elem(l, w);
+	lxc_list_add(workers, l);
 }
 
-static int
-signal_handler(int fd, void *data, struct lxc_epoll_descr *descr)
+static int signal_handler(int fd, void *data, struct lxc_epoll_descr *descr)
 {
 	struct lxc_list *iterator;
 	struct signalfd_siginfo si;
+	size_t nread;
+	pid_t pid;
+	int status;
 
-	if (read (fd, &si, sizeof (struct signalfd_siginfo)) !=
-	    sizeof (struct signalfd_siginfo)) {
+	nread = read(fd, &si, sizeof(si));
+	if (nread != sizeof(si))
 		return 0;
-	}
 
-	if (si.ssi_signo != SIGCHLD) return 0;
+	if (si.ssi_signo != SIGCHLD)
+		return 0;
 
-	pid_t pid = si.ssi_pid;
-	int status = si.ssi_status;
+	pid = si.ssi_pid;
+	status = si.ssi_status;
 
 	lxc_list_for_each(iterator, workers) {
 		struct worker *w = iterator->elem;
 
-		if (pid == w->pid) {
-			if (w->waitfd > 0) {
-				write (w->waitfd, &status, sizeof (int));
-				close (w->waitfd);
-				lxc_list_del (iterator);
-				free (iterator);
-				free (w);
-			} else {
-				w->done = 1;
-				w->status = status;
-			}
+		if (pid != w->pid)
+			continue;
+
+		if (w->waitfd > 0) {
+			write(w->waitfd, &status, sizeof(int));
+			close(w->waitfd);
+			lxc_list_del(iterator);
+			free(iterator);
+			free(w);
+		} else {
+			w->done = 1;
+			w->status = status;
 		}
 	}
 
@@ -118,9 +120,7 @@ signal_handler(int fd, void *data, struct lxc_epoll_descr *descr)
 
 
 /* Set a signal handler */
-static void
-setsig(struct sigaction *sa, int sig,
-		   void (*fun)(int), int flags)
+static void setsig(struct sigaction *sa, int sig, void (*fun)(int), int flags)
 {
 	sa->sa_handler = fun;
 	sa->sa_flags = flags;
@@ -128,36 +128,32 @@ setsig(struct sigaction *sa, int sig,
 	sigaction(sig, sa, NULL);
 }
 
-void
-term_handler()
+void term_handler()
 {
-	printf ("\ninit logger finished\n");
-	exit (0);
+	printf("\ninit logger finished\n");
+	exit(0);
 }
 
-
-
-static int
-proxy_handler(int fd, void *data, struct lxc_epoll_descr *descr)
+static int proxy_handler(int fd, void *data, struct lxc_epoll_descr *descr)
 {
 	char buf[1024];
 	int n_read;
 	int outfd = (int)data;
 
-	if ((n_read = read (fd, buf, sizeof(buf))) <= 0) {
-		printf ("proxy connection closed\n");
+	n_read = read(fd, buf, sizeof(buf));
+	if (n_read <= 0) {
+		printf("proxy connection closed\n");
 		lxc_mainloop_del_handler(descr, fd);
-		close (outfd);
-		close (fd);
+		close(outfd);
+		close(fd);
 		return 0;
 	}
-	safe_write (outfd, buf, n_read);
+	safe_write(outfd, buf, n_read);
 
 	return 0;
 }
 
-static int
-fork_bash (int fd, struct lxc_epoll_descr *descr)
+static int fork_bash(int fd, struct lxc_epoll_descr *descr)
 {
 	char *arg[] = {"-bash", NULL};
 	char *env[] = {"PATH=/bin:/sbin:/usr/bin:/usr/sbin:",
@@ -169,53 +165,53 @@ fork_bash (int fd, struct lxc_epoll_descr *descr)
 	int sync[2];
 	pid_t pid = -1;
 
-	if (pipe (sync) !=  0) {
-		lxc_log_syserror ("create pipe failed");
-		write (fd, &pid, sizeof (pid_t));
-		close (fd);
+	if (pipe(sync) !=  0) {
+		lxc_log_syserror("create pipe failed");
+		write(fd, &pid, sizeof(pid_t));
+		close(fd);
 		return -1;
 	}
 
 	pid = forkpty(&master, NULL, NULL, NULL);
 
 	if (pid == -1) {
-		lxc_log_syserror ("forkpty failed - pty enabled?");
-		close (sync[0]);
-		close (sync[1]);
-		write (fd, &pid, sizeof (pid_t));
-		close (fd);
+		lxc_log_syserror("forkpty failed - pty enabled?");
+		close(sync[0]);
+		close(sync[1]);
+		write(fd, &pid, sizeof(pid_t));
+		close(fd);
 		return -1;
 	}
 
 	if (!pid) {
-		close (sync[1]);
-		close (fd);
+		close(sync[1]);
+		close(fd);
 
-		int n_read = safe_read (sync[0], (void *)&pid, sizeof (pid_t));
-		close (sync[0]);
+		int n_read = safe_read(sync[0], (void *)&pid, sizeof(pid_t));
+		close(sync[0]);
 
-		if (n_read != sizeof (pid_t)) {
-			printf ("sync failed\n");
+		if (n_read != sizeof(pid_t)) {
+			printf("sync failed\n");
 			exit(1);
 		}
 
-		chdir ("/root");
+		chdir("/root");
 
 		execve("/bin/bash", arg, env);
 		execve("/bin/sh", arg, env);
-		printf ("exec failed: unable to exec bash");
-		exit (1);
+		printf("exec failed: unable to exec bash");
+		exit(1);
 	}
 
-	printf ("fork sucessful\n");
+	printf("fork sucessful\n");
 
-	add_worker (pid);
+	add_worker(pid);
 
-	write (fd, &pid, sizeof (pid_t));
+	write(fd, &pid, sizeof(pid_t));
 
-	close (sync[0]);
-	write (sync[1], &pid, sizeof (pid_t));
-	close (sync[1]);
+	close(sync[0]);
+	write(sync[1], &pid, sizeof(pid_t));
+	close(sync[1]);
 
 	if (lxc_mainloop_add_handler(descr, master, proxy_handler, (void *)fd)) {
 		lxc_log_error("failed to add proxy handler");
@@ -228,66 +224,64 @@ fork_bash (int fd, struct lxc_epoll_descr *descr)
 	return pid;
 }
 
-static int
-fork_cmd (int fd, struct lxc_epoll_descr *descr, char *argv[])
+static int fork_cmd(int fd, struct lxc_epoll_descr *descr, char *argv[])
 {
 	pid_t pid = fork();
 
 	if (pid == -1) {
-		lxc_log_syserror ("fork failed");
-		write (fd, &pid, sizeof (pid_t));
-		close (fd);
+		lxc_log_syserror("fork failed");
+		write(fd, &pid, sizeof(pid_t));
+		close(fd);
 		return -1;
 	}
 
 	if (!pid) {
 		pid_t cpid = getpid();
-		write (fd, &cpid, sizeof (pid_t));
+		write(fd, &cpid, sizeof(pid_t));
 
-		close (0);
-		dup (fd);
+		close(0);
+		dup(fd);
 
-		close (1);
-		dup (fd);
+		close(1);
+		dup(fd);
 
-		close (2);
-		dup (fd);
+		close(2);
+		dup(fd);
 
-		close (fd);
+		close(fd);
 
-		chdir ("/");
+		chdir("/");
 
-		setenv ("PATH", "/bin:/sbin:/usr/bin:/usr/sbin:", 1);
-		setenv ("USER", "root", 1);
-		setenv ("HOME", "/", 1);
+		setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin:", 1);
+		setenv("USER", "root", 1);
+		setenv("HOME", "/", 1);
 
 		execvp(argv[0], argv);
-		printf ("exec failed: unable to exec %s\n", argv[0]);
+		printf("exec failed: unable to exec %s\n", argv[0]);
 		exit(1);
 	}
 
-	printf ("fork sucessful %d\n", pid);
+	printf("fork sucessful %d\n", pid);
 
-	add_worker (pid);
+	add_worker(pid);
 
-	close (fd);
+	close(fd);
 
 	return pid;
 }
 
-// for debugging only
-static int
-open_socket (void)
+/* for debugging only */
+static int open_socket(void)
 {
-	// open command socket
+	/* open command socket */
 	struct sockaddr_un addr;
 	char *cmdsock = "/tmp/testsock";
 
-	unlink (cmdsock);
+	unlink(cmdsock);
 
-	int sock = socket (PF_UNIX, SOCK_STREAM, 0);
+	int sock = socket(PF_UNIX, SOCK_STREAM, 0);
 	if (sock == -1) {
-		lxc_log_syserror ("faild to create socket");
+		lxc_log_syserror("faild to create socket");
 		return -1;
 	}
 
@@ -298,70 +292,70 @@ open_socket (void)
 
 	if (bind(sock, (struct sockaddr *) &addr,
 		 sizeof(struct sockaddr_un)) == -1) {
-		lxc_log_syserror ("command socket bind failed");
+		lxc_log_syserror("command socket bind failed");
 		return -1;
 	}
 
 	return sock;
 }
 
-static int
-exec_handler(int cmdsock, void *data, struct lxc_epoll_descr *descr)
+static int exec_handler(int cmdsock, void *data, struct lxc_epoll_descr *descr)
 {
 	struct sockaddr_un peer;
 	socklen_t addrlen = sizeof(struct sockaddr_un);
-	int fd = accept (cmdsock, (struct sockaddr *) &peer, &addrlen);
+	int fd = accept(cmdsock, (struct sockaddr *) &peer, &addrlen);
 	int n_read;
 
 	if (fd == -1) {
-		lxc_log_syserror ("accept failed");
+		lxc_log_syserror("accept failed");
 		return 0;
 	}
 
-	printf ("got connection %d\n", fd);
+	printf("got connection %d\n", fd);
 
 	int cmdlen;
-	if ((n_read = safe_read (fd, (void *)&cmdlen, sizeof(int))) != sizeof(int)) {
-		printf ("unable to read command len\n");
+	if ((n_read = safe_read(fd, (void *)&cmdlen, sizeof(int)))
+	    != sizeof(int)) {
+		printf("unable to read command len\n");
 		return 0;
 	}
 
-	char *msg = malloc (cmdlen);
-	if ((n_read = safe_read (fd, msg, cmdlen)) != cmdlen) {
-		free (msg);
-		printf ("unable to read command data %d\n", n_read);
+	char *msg = malloc(cmdlen);
+	if ((n_read = safe_read(fd, msg, cmdlen)) != cmdlen) {
+		free(msg);
+		printf("unable to read command data %d\n", n_read);
 		return 0;
 	}
 
 	char *cmd;
 	char **argv;
-	argv = unpack_command (msg, cmdlen, &cmd);
+	argv = unpack_command(msg, cmdlen, &cmd);
 
-	printf ("got command %s\n", cmd);
+	printf("got command %s\n", cmd);
 
 	pid_t pid = -1;
 
-	if (!strcmp (cmd, "enter")) {
+	if (!strcmp(cmd, "enter")) {
 
 		fork_bash(fd, descr);
 
-	} else if (!strcmp (cmd, "exec")) {
+	} else if (!strcmp(cmd, "exec")) {
 
-		fork_cmd (fd, descr, argv);
+		fork_cmd(fd, descr, argv);
 
-	} else if (!strcmp (cmd, "kill")) {
+	} else if (!strcmp(cmd, "kill")) {
 
-		pid_t wpid = atoi (argv[0]);
-		int signum = atoi (argv[1]);
+		pid_t wpid = atoi(argv[0]);
+		int signum = atoi(argv[1]);
 
-		int res = kill (wpid, signum);
+		int res = kill(wpid, signum);
 
-		write (fd, &res, sizeof (int));
-		close (fd);
+		write(fd, &res, sizeof (int));
+		close(fd);
 
-	} else if (!strcmp (cmd, "wait")) {
+	} else if (!strcmp(cmd, "wait")) {
 
-		pid_t wpid = atoi (argv[0]);
+		pid_t wpid = atoi(argv[0]);
 		struct lxc_list *iterator;
 		int found = 0;
 
@@ -370,8 +364,8 @@ exec_handler(int cmdsock, void *data, struct lxc_epoll_descr *descr)
 
 			if (wpid == w->pid) {
 				if (w->done) {
-					write (fd, &w->status, sizeof (int));
-					close (fd);
+					write(fd, &w->status, sizeof(int));
+					close(fd);
 				} else {
 					w->waitfd = fd;
 				}
@@ -382,71 +376,69 @@ exec_handler(int cmdsock, void *data, struct lxc_epoll_descr *descr)
 
 		if (!found) {
 			int res = -1;
-			printf ("no such command %d\n", wpid);
-			write (fd, &res, sizeof (int));
-			close (fd);
+			printf("no such command %d\n", wpid);
+			write(fd, &res, sizeof (int));
+			close(fd);
 		}
 
 	} else {
-		write (fd, &pid, sizeof (pid_t));
-		printf ("unknown command %s\n", cmd);
+		write(fd, &pid, sizeof(pid_t));
+		printf("unknown command %s\n", cmd);
 	}
 
-	free (cmd);
+	free(cmd);
 	int i = 0;
-	while (argv[i]) free (argv[i++]);
+	while (argv[i])
+		free(argv[i++]);
 
-	printf ("end connection\n");
+	printf("end connection\n");
 
 	return 0;
 }
 
-static int open_log_fifo (struct lxc_epoll_descr *descr);
+static int open_log_fifo(struct lxc_epoll_descr *descr);
 
-static int
-log_handler_fifo (int fd, void *data, struct lxc_epoll_descr *descr)
+static int log_handler_fifo(int fd, void *data, struct lxc_epoll_descr *descr)
 {
 	char buf[1024];
 	int n_read;
 
-	if ((n_read = read (fd, buf, sizeof(buf))) <= 0) {
+	if ((n_read = read(fd, buf, sizeof(buf))) <= 0) {
 		lxc_mainloop_del_handler(descr, fd);
-		close (fd);
-		open_log_fifo (descr);
+		close(fd);
+		open_log_fifo(descr);
 		return 0;
 	}
 
-	full_write (STDOUT_FILENO, buf, n_read);
+	full_write(STDOUT_FILENO, buf, n_read);
 
 	return 0;
 }
 
-static int
-log_handler_pty(int fd, void *data, struct lxc_epoll_descr *descr)
+static int log_handler_pty(int fd, void *data, struct lxc_epoll_descr *descr)
 {
 	char buf[1024];
 	int n_read;
 
-	if ((n_read = read (fd, buf, sizeof(buf))) <= 0) {
+	if ((n_read = read(fd, buf, sizeof(buf))) <= 0) {
 		lxc_mainloop_del_handler(descr, fd);
-		close (fd);
-		printf ("logger finished\n");
+		close(fd);
+		printf("logger finished\n");
 		return 0;
 	}
 
-	full_write (STDOUT_FILENO, buf, n_read);
+	full_write(STDOUT_FILENO, buf, n_read);
 
 	return 0;
 }
 
-static int
-open_log_fifo (struct lxc_epoll_descr *descr)
+static int open_log_fifo(struct lxc_epoll_descr *descr)
 {
-	mkfifo (LOG_FIFO, 0600);
+	mkfifo(LOG_FIFO, 0600);
 
 	int fd;
 	if ((fd = open(LOG_FIFO, O_RDONLY|O_NONBLOCK)) < 0) {
-		lxc_log_syserror ("failed to open fifo");
+		lxc_log_syserror("failed to open fifo");
 		return -1;
 	}
 
@@ -458,20 +450,20 @@ open_log_fifo (struct lxc_epoll_descr *descr)
 	return 0;
 }
 
-static int
-open_log_pty (struct lxc_epoll_descr *descr, char **console)
+static int open_log_pty(struct lxc_epoll_descr *descr, char **console)
 {
 	int master, slave;
 	char ttyname[256];
 
-	if (openpty (&master, &slave, ttyname, NULL, NULL) == -1) {
-		lxc_log_syserror ("cant open console pty");
+	if (openpty(&master, &slave, ttyname, NULL, NULL) == -1) {
+		lxc_log_syserror("can't open console pty");
 		return -1;
 	}
 
-	printf ("TEST console = %s\n", ttyname);
+	printf("TEST console = %s\n", ttyname);
 
-	if (console) *console = ttyname;
+	if (console)
+		*console = ttyname;
 
 	return master;
 }
@@ -518,36 +510,38 @@ main(int argc, char * argv[])
 	int sync[2];
 
 	if (getpid() != 1) {
-		lxc_log_error ("got wrong pid for init, pid = '%d'", getpid());
+		lxc_log_error("got wrong pid for init, pid = '%d'", getpid());
 	}
 
-	unlink ("/var/log/init.log");
+	unlink("/var/log/init.log");
 
-	close (1);
-	if (open ("/var/log/init.log", O_CREAT|O_WRONLY|O_TRUNC, 0644) != 1) {
-		lxc_log_syserror ("open init.log failed");
-		exit (-1);
+	close(1);
+	if (open("/var/log/init.log", O_CREAT|O_WRONLY|O_TRUNC, 0644) != 1) {
+		lxc_log_syserror("open init.log failed");
+		exit(-1);
 	}
 
-	close (2);
-	dup (1);
+	close(2);
+	dup(1);
 
-	close (0);
-	open ("/dev/null", O_RDONLY);
+	close(0);
+	open("/dev/null", O_RDONLY);
 
-	// use unbuffered IO for stdout/stderr
+	/* use unbuffered IO for stdout/stderr */
 	setvbuf(stdout, (char *)NULL, _IONBF, 0);
 	setvbuf(stderr, (char *)NULL, _IONBF, 0);
 
-	char *sockstr = getenv ("SOCK");
+	char *sockstr = getenv("SOCK");
 	if (!sockstr || atoi(sockstr) < 0) {
-		lxc_log_syserror ("no command socket specified");
-		exit (1);
+		lxc_log_syserror("no command socket specified");
+		exit(1);
 	}
 
-	char *flagsstr = getenv ("FLAGS");
+	char *flagsstr = getenv("FLAGS");
 	int flags = 0;
-	if (flagsstr)  flags = atol(flagsstr);
+
+	if (flagsstr)
+		flags = atol(flagsstr);
 
 	if ((flags & LXC_MOUNT_SYSFS) &&
 	    mount("sysfs", "/sys", "sysfs", 0, NULL)) {
@@ -562,18 +556,16 @@ main(int argc, char * argv[])
 	}
 
 
-	if (pipe (sync) != 0) {
-		lxc_log_syserror ("unable to create sync pipe");
-		exit (-1);
+	if (pipe(sync) != 0) {
+		lxc_log_syserror("unable to create sync pipe");
+		exit(-1);
 	}
-
-
 
 	int pid = fork();
 
 	if (pid == -1) {
-		lxc_log_syserror ("unable to fork cinit");
-		exit (-1);
+		lxc_log_syserror("unable to fork cinit");
+		exit(-1);
 	}
 
 	if (pid == 0) {
@@ -581,9 +573,9 @@ main(int argc, char * argv[])
 		char *console;
 		int ret = -1;
 
-		close (sync[0]); // close reading end
+		close(sync[0]); /* close reading end */
 
-		printf ("starting init logger\n");
+		printf("starting init logger\n");
 
 		workers = &l;
 		lxc_list_init(workers);
@@ -591,27 +583,27 @@ main(int argc, char * argv[])
 		setsig(&sa, SIGTERM, term_handler, SA_RESTART);
 		setsig(&sa, SIGPIPE, SIG_IGN, SA_RESTART);
 
-		int sigfd = setup_signal_fd (&oldmask);
+		int sigfd = setup_signal_fd(&oldmask);
 		if (sigfd < 0) {
 			lxc_log_error("failed to set signal fd handler");
 			goto out;
 		}
 
-		int sock = atoi (sockstr);
-		// testing
+		int sock = atoi(sockstr);
+		/* FIXME: testing */
 		/*int sock = open_socket ();
 		  if (sock == -1) {
 		  exit (-1);
 		  }*/
 
-		if (listen (sock, 10) != 0) {
+		if (listen(sock, 10) != 0) {
 			lxc_log_syserror ("listen failed");
 			goto out;
 		}
 
-		if (lxc_mainloop_open (8, &descr)) {
-			lxc_log_error ("failed to create mainloop");
-			close (sock);
+		if (lxc_mainloop_open(8, &descr)) {
+			lxc_log_error("failed to create mainloop");
+			close(sock);
 			goto out;
 		}
 
@@ -627,50 +619,51 @@ main(int argc, char * argv[])
 
 		int logfd;
 
-		if ((logfd = open_log_pty (&descr, &console)) != -1) {
-			if (lxc_mainloop_add_handler(&descr, logfd, log_handler_pty, NULL)) {
+		logfd = open_log_pty(&descr, &console);
+
+		if (logfd != -1) {
+			if (lxc_mainloop_add_handler(&descr, logfd,
+						     log_handler_pty, NULL)) {
 				lxc_log_error("failed to add log handler");
-				// ignore error
+				/* do nothing on error */
 			}
-		} else if  (open_log_fifo (&descr) != -1) {
+		} else if  (open_log_fifo(&descr) != -1) {
 			console = LOG_FIFO;
-			lxc_log_info ("using fifo for init logger");
+			lxc_log_info("using fifo for init logger");
 		} else {
 			console = "";
 		}
 
-		write (sync[1], console, strlen(console) + 1);
-		close (sync[1]);
+		write(sync[1], console, strlen(console) + 1);
+		close(sync[1]);
 
 		ret = lxc_mainloop(&descr);
 	  out:
-		printf ("stopping init logger\n");
-		exit (ret);
+		printf("stopping init logger\n");
+		exit(ret);
 
 	  out_mainloop_open:
 		lxc_mainloop_close(&descr);
 		goto out;
 	}
 
-	// normal init
+	/* normal init */
 
-	close (sync[1]);
+	close(sync[1]);
 	char readbuf[256];
 	int n_read;
 	char *envp[] = {"HOME=/", "TERM=linux", NULL, NULL};
 
 	char **initargv = argv + 1;
 
-	// sync
-	if (((n_read = safe_read (sync[0], readbuf, sizeof (readbuf))) > 0) &&
-	    (readbuf[n_read] == 0)) {
-
-		envp[2] = strdup_printf ("CONSOLE=%s", readbuf);
-	}
+	/* sync */
+	n_read = safe_read(sync[0], readbuf, sizeof (readbuf));
+	if (n_read > 0 && readbuf[n_read] == 0)
+		envp[2] = strdup_printf("CONSOLE=%s", readbuf);
 
 	execve(initargv[0], initargv, envp);
 
 	lxc_log_syserror("failed to exec init");
 
-	exit (-1);
+	exit(-1);
 }
