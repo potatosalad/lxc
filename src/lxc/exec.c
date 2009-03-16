@@ -40,6 +40,10 @@ int lxc_exec_cmd(char *cmdsock, char *cmd, char *argv[], int *res)
 	char *msg;
 
 	msg = lxc_pack_command(cmd, argv, &msglen);
+	if (!msg) {
+		lxc_log_syserror("failed to pack command");
+		return -1;
+	}
 
 	sock = socket(PF_UNIX, SOCK_STREAM, 0);
 	if (sock == -1) {
@@ -134,6 +138,9 @@ char *lxc_pack_command(char *cmd, char *argv[], int *cmdlen)
 	}
 
 	data = malloc(len + sizeof(int));
+	if (!data)
+		return NULL;
+
 	*((int *)data) = len;
 	p = data + sizeof(int);
 
@@ -179,6 +186,8 @@ char **lxc_unpack_command(char *data, int len, char **cmd)
 
 	size = sizeof(void *) * (argc + 1);
 	av = malloc(size);
+	if (!av)
+		return NULL;
 	memcpy(av, argv, size);
 
 	return av;
