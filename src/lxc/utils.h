@@ -5,6 +5,7 @@
  *
  * Authors:
  * Daniel Lezcano <dlezcano at fr.ibm.com>
+ * Dietmar Maurer <dietmar at proxmox.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,6 +23,36 @@
  */
 #ifndef _utils_h
 #define _utils_h
+
+#ifdef HAVE_SYS_SIGNALFD_H
+#include <sys/signalfd.h>
+#else
+extern int signalfd (int fd, const sigset_t *mask, int flags);
+
+struct signalfd_siginfo {
+	uint32_t ssi_signo;   /* Signal number */
+	int32_t  ssi_errno;   /* Error number (unused) */
+	int32_t  ssi_code;    /* Signal code */
+	uint32_t ssi_pid;     /* PID of sender */
+	uint32_t ssi_uid;     /* Real UID of sender */
+	int32_t  ssi_fd;      /* File descriptor (SIGIO) */
+	uint32_t ssi_tid;     /* Kernel timer ID (POSIX timers) */
+	uint32_t ssi_band;    /* Band event (SIGIO) */
+	uint32_t ssi_overrun; /* POSIX timer overrun count */
+	uint32_t ssi_trapno;  /* Trap number that caused signal */
+	int32_t  ssi_status;  /* Exit status or signal (SIGCHLD) */
+	int32_t  ssi_int;     /* Integer sent by sigqueue(2) */
+	uint64_t ssi_ptr;     /* Pointer sent by sigqueue(2) */
+	uint64_t ssi_utime;   /* User CPU time consumed (SIGCHLD) */
+	uint64_t ssi_stime;   /* System CPU time consumed (SIGCHLD) */
+	uint64_t ssi_addr;    /* Address that generated signal
+				 (for hardware-generated signals) */
+	uint8_t  pad[48];      /* Pad size to 128 bytes (allow for
+				  additional fields in the future) */
+};
+
+#endif
+
 
 #define LXC_TTY_HANDLER(s) \
 	static struct sigaction lxc_tty_sa_##s;				\
@@ -47,5 +78,23 @@
 	do { \
 		sigaction(s, &lxc_tty_sa_##s, NULL); \
 	} while (0)
+
+ssize_t safe_read (int fd, char *buf, size_t count);
+
+ssize_t safe_write (int fd, char *buf, size_t count);
+
+int full_write(int fd, char *buf, size_t len);
+
+char * pack_command (char *cmd, char *argv[], int *cmdlen);
+
+char ** unpack_command (char *data, int len, char **cmd);
+
+int lxc_exec_cmd (char *cmdsock, char *cmd, char *argv[], int *res);
+
+int lxc_exec_wait (char *cmdsock, int cmdid);
+
+int lxc_exec_kill (char *cmdsock, int cmdid, int signum);
+
+char *strdup_printf (const char *fmt, ...);
 
 #endif
