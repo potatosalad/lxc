@@ -33,23 +33,23 @@
  * syslog (useful for application containers).
  */
 
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <stdlib.h>
+#define _GNU_SOURCE
+#include <stdio.h>
+#undef _GNU_SOURCE
 #include <unistd.h>
 #include <errno.h>
-#include <stdio.h>
-#include <signal.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <string.h>
-#include <sys/param.h>
-#include <termios.h>
-#include <sys/ioctl.h>
 #include <pty.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+#include <sys/param.h>
 #include <sys/mount.h>
 
 #include "mainloop.h"
@@ -659,7 +659,11 @@ main(int argc, char * argv[])
 	/* sync */
 	n_read = safe_read(sync[0], readbuf, sizeof (readbuf));
 	if (n_read > 0 && readbuf[n_read] == 0)
-		envp[2] = strdup_printf("CONSOLE=%s", readbuf);
+		if (!asprintf(&envp[2], "CONSOLE=%s", readbuf)) {
+			lxc_log_syserror("failed to allocate memory");
+			exit(-1);
+		}
+
 
 	execve(initargv[0], initargv, envp);
 

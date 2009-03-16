@@ -325,10 +325,12 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 	LXC_TTY_ADD_HANDLER(SIGINT);
 	LXC_TTY_ADD_HANDLER(SIGQUIT);
 
-	// open command socket
+	/* open command socket */
 	struct sockaddr_un addr;
 
-	char *cmdsock = strdup_printf (LXCPATH "/%s/cmdsock", name);
+	char *cmdsock;
+
+	asprintf (&cmdsock, LXCPATH "/%s/cmdsock", name);
 	unlink (cmdsock);
 
 	int sock = socket (PF_UNIX, SOCK_STREAM, 0);
@@ -399,8 +401,11 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 			goto out_child;
 		}
 
-		char *sockstr = strdup_printf ("SOCK=%d\n", sock);
-		char *flagsstr = strdup_printf ("FLAGS=%ul\n", flags);
+		char *sockstr;
+		char *flagsstr;
+		asprintf(&sockstr, "SOCK=%d\n", sock);
+		asprintf(&flagsstr, "FLAGS=%ul\n", flags);
+
 		char *envp[] = {sockstr, flagsstr, NULL};
 
 		int argc = 0;

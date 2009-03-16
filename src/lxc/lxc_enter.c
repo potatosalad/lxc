@@ -166,7 +166,10 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	cmdsock = strdup_printf(LXCPATH "/%s/cmdsock", name);
+	if (!asprintf(&cmdsock, LXCPATH "/%s/cmdsock", name)) {
+		lxc_log_syserror("failed to allocate memory");
+		return -1;
+	}
 
 	cmdfd = lxc_exec_cmd(cmdsock, "enter", args, &cmdid);
 	if (cmdid <= 0) {

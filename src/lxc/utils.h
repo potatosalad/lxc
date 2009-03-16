@@ -84,6 +84,4 @@ ssize_t safe_read(int fd, char *buf, size_t count);
 ssize_t safe_write(int fd, char *buf, size_t count);
 
 int full_write(int fd, char *buf, size_t len);
-
-char *strdup_printf(const char *fmt, ...);
 #endif

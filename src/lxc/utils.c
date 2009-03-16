@@ -74,35 +74,3 @@ int full_write(int fd, char *buf, size_t len)
 
 	return total;
 }
-
-/* code from the snprintf(3) manual page */
-char *strdup_printf(const char *fmt, ...) {
-	/* Guess we need no more than 64 bytes. */
-	int n, size = 64;
-	char *p, *np;
-	va_list ap;
-
-	if ((p = malloc(size)) == NULL)
-		return NULL;
-
-	while (1) {
-		/* Try to print in the allocated space. */
-		va_start(ap, fmt);
-		n = vsnprintf(p, size, fmt, ap);
-		va_end(ap);
-		/* If that worked, return the string. */
-		if (n > -1 && n < size)
-			return p;
-		/* Else try again with more space. */
-		if (n > -1)    /* glibc 2.1 */
-			size = n+1; /* precisely what is needed */
-		else           /* glibc 2.0 */
-			size *= 2;  /* twice the old size */
-		if ((np = realloc(p, size)) == NULL) {
-			free(p);
-			return NULL;
-		} else {
-			p = np;
-		}
-	}
-}
