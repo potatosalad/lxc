@@ -52,10 +52,7 @@
 #include <sys/param.h>
 #include <sys/mount.h>
 
-#include "mainloop.h"
-#include "lxc.h"
-#include "lxc_list.h"
-#include "utils.h"
+#include <lxc/lxc.h>
 
 #define LOG_FIFO "/var/log/init.fifo"
 

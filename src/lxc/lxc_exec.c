@@ -35,8 +35,6 @@
 #include <signal.h>
 
 #include <lxc/lxc.h>
-#include <lxc/lxc_config.h>
-#include "mainloop.h"
 
 static char *cmdsock;
 

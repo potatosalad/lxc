@@ -42,6 +42,8 @@ extern "C" {
 #include <lxc/utils.h>
 #include <lxc/error.h>
 #include <lxc/cgroup.h>
+#include <lxc/mainloop.h>
+#include <lxc/af_unix.h>
 #include <lxc/monitor.h>
 #include <lxc/exec.h>
 

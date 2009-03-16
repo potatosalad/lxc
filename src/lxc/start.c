@@ -43,6 +43,8 @@
 #include <sys/un.h>
 #include <sys/poll.h>
 
+#include <lxc/lxc.h>
+
 #ifdef HAVE_SYS_SIGNALFD_H 
 #  include <sys/signalfd.h>
 #else
@@ -82,12 +84,6 @@ int signalfd(int fd, const sigset_t *mask, int flags)
 #if !HAVE_DECL_PR_CAPBSET_DROP
 #define PR_CAPBSET_DROP 24
 #endif
-
-#include "error.h"
-#include "af_unix.h"
-#include "mainloop.h"
-
-#include <lxc/lxc.h>
 
 LXC_TTY_HANDLER(SIGINT);
 LXC_TTY_HANDLER(SIGQUIT);
