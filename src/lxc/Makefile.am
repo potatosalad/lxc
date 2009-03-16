@@ -27,6 +27,7 @@ liblxc_la_SOURCES = \
 	error.h error.c \
 	parse.c parse.h \
 	cgroup.c cgroup.h \
+	exec.c exec.h \
 	lxc.h \
 	utils.c utils.h \
 	lxc_lock.c lxc_lock.h \
@@ -59,7 +60,7 @@ bin_PROGRAMS = \
 	lxc-init \
 	lxc-cinit \
 	lxc-enter \
-	lxc-cmd \
+	lxc-exec \
 	lxc-create \
 	lxc-destroy \
 	lxc-stop \
@@ -86,11 +87,11 @@ lxc_cinit_SOURCES = lxc_cinit.c
 lxc_cinit_LDADD = liblxc.la -lc -lutil
 lxc_cinit_LDFLAGS = -all-static
 
-lxc_enter_SOURCES = lxc_enter.c lxc_config.h
+lxc_enter_SOURCES = lxc_enter.c
 lxc_enter_LDADD = liblxc.la
 
-lxc_cmd_SOURCES = lxc_cmd.c lxc_config.h
-lxc_cmd_LDADD = liblxc.la
+lxc_exec_SOURCES = lxc_exec.c
+lxc_exec_LDADD = liblxc.la
 
 lxc_create_SOURCES = lxc_create.c lxc_config.c lxc_config.h
 lxc_create_LDADD = liblxc.la

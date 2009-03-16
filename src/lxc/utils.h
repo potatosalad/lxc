@@ -85,16 +85,5 @@ ssize_t safe_write(int fd, char *buf, size_t count);
 
 int full_write(int fd, char *buf, size_t len);
 
-char *pack_command(char *cmd, char *argv[], int *cmdlen);
-
-char **unpack_command(char *data, int len, char **cmd);
-
-int lxc_exec_cmd(char *cmdsock, char *cmd, char *argv[], int *res);
-
-int lxc_exec_wait(char *cmdsock, int cmdid);
-
-int lxc_exec_kill(char *cmdsock, int cmdid, int signum);
-
 char *strdup_printf(const char *fmt, ...);
-
 #endif

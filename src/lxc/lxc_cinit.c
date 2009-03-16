@@ -329,7 +329,7 @@ static int exec_handler(int cmdsock, void *data, struct lxc_epoll_descr *descr)
 
 	char *cmd;
 	char **argv;
-	argv = unpack_command(msg, cmdlen, &cmd);
+	argv = lxc_unpack_command(msg, cmdlen, &cmd);
 
 	printf("got command %s\n", cmd);
 

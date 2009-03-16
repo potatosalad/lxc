@@ -43,6 +43,7 @@ extern "C" {
 #include <lxc/error.h>
 #include <lxc/cgroup.h>
 #include <lxc/monitor.h>
+#include <lxc/exec.h>
 
 /* flags for lxc_cinit */
 #define LXC_MOUNT_PROC 1
