@@ -160,6 +160,9 @@ install-exec-local:
 		$(bindir)/lxc-init && \
 		\
 	 setcap cap_sys_admin=ep \
+		$(bindir)/lxc-cinit && \
+		\
+	 setcap cap_sys_admin=ep \
 		$(bindir)/lxc-netstat && \
 		\
 	 mkdir -p $(prefix)/var/lxc && \

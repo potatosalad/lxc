@@ -43,6 +43,7 @@ void usage(char *cmd)
 
 int main(int argc, char *argv[])
 {
+	char **args;
 	char *name = NULL, *file = NULL;
 	char path[MAXPATHLEN];
 	int opt;
@@ -88,7 +89,22 @@ int main(int argc, char *argv[])
 		autodestroy = 1;
 	}
 
-	ret = lxc_start(name, argv + optind, LXC_MOUNT_PROC);
+	/* lxc-init --mount-procfs -- .... */
+	args = malloc((argc + 3)*sizeof(*args));
+	if (!args) {
+		fprintf(stderr, "failed to allocate memory for '%s'\n", name);
+		goto out;
+	}
+
+	nbargs = 0;
+	args[nbargs++] = LXCBINDIR "/lxc-init";
+	args[nbargs++] = "--mount-procfs";
+	args[nbargs++] = "--";
+
+	for (opt = 0; opt < argc; opt++)
+		args[nbargs++] = argv[optind++];
+
+	ret = lxc_start(name, args, LXC_MOUNT_PROC);
 	if (ret) {
 		fprintf(stderr, "%s\n", lxc_strerror(ret));
 		goto out;

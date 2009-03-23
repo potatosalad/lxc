@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -40,22 +41,35 @@ int lxc_exec_launch(const char *exec, int sock)
 		NULL,
 	};
 
+	pid_t pid;
 
-	if (!asprintf(&envp[0], "SOCK=%d\n", sock)) {
-		lxc_log_syserror("failed to allocate memory");
+	pid = fork();
+
+	if (!pid) {
+		if (asprintf(&envp[0], "SOCK=%d\n", sock) < 0) {
+			lxc_log_syserror("failed to allocate memory");
+			goto out;
+		}
+
+		if (asprintf(&envp[1], "FLAGS=%ul\n", LXC_START_INITLOG) < 0) {
+			lxc_log_error("failed to allocate memory");
+			goto out;
+		}
+
+		execve(exec, argv, envp);
+		lxc_log_syserror("failed to exec '%s'", exec);
+	out:
+		exit(1);
+	}
+
+	if (pid < 0) {
+		lxc_log_syserror("failed to fork");
 		return -1;
 	}
 
-	if (asprintf(&envp[1], "FLAGS=%ul\n", LXC_START_INITLOG)) {
-		lxc_log_error("failed to allocate memory");
-		free(envp[0]);
-		return -1;
-	}
+	close(sock);
 
-	execve(exec, argv, envp);
-	lxc_log_syserror("failed to exec '%s'", exec);
-
-	return -1;
+	return 0;
 }
 
 int lxc_exec_open(const char *name)

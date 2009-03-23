@@ -890,6 +890,11 @@ static int setup_exec(const char *name, struct lxc_exec_info *exec_info)
 		return -1;
 	}
 
+	if (lxc_exec_launch(dst, exec_info->sock)) {
+		lxc_log_error("failed to launch '%s'", src);
+		return -1;
+	}
+
 	return 0;
 }
 

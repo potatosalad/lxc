@@ -504,11 +504,9 @@ main(int argc, char * argv[])
 	sigset_t oldmask;
 	struct sigaction sa;
 	struct lxc_list l;
-	int sync[2];
-
-	if (getpid() != 1) {
-		lxc_log_error("got wrong pid for init, pid = '%d'", getpid());
-	}
+	struct lxc_epoll_descr descr;
+	char *console;
+	int ret = -1;
 
 	unlink("/var/log/init.log");
 
@@ -540,131 +538,71 @@ main(int argc, char * argv[])
 	if (flagsstr)
 		flags = atol(flagsstr);
 
-	if ((flags & LXC_MOUNT_SYSFS) &&
-	    mount("sysfs", "/sys", "sysfs", 0, NULL)) {
-		fprintf(stderr, "failed to mount '/sys'\n");
-		exit(1);
-	}
+	printf("starting init logger\n");
 
-	if ((flags & LXC_MOUNT_PROC) &&
-	    mount("proc", "/proc", "proc", 0, NULL)) {
-		fprintf(stderr, "failed to mount '/proc'\n");
-		exit(1);
-	}
+	workers = &l;
+	lxc_list_init(workers);
 
+	setsig(&sa, SIGTERM, term_handler, SA_RESTART);
+	setsig(&sa, SIGPIPE, SIG_IGN, SA_RESTART);
 
-	if (pipe(sync) != 0) {
-		lxc_log_syserror("unable to create sync pipe");
-		exit(-1);
-	}
-
-	int pid = fork();
-
-	if (pid == -1) {
-		lxc_log_syserror("unable to fork cinit");
-		exit(-1);
-	}
-
-	if (pid == 0) {
-		struct lxc_epoll_descr descr;
-		char *console;
-		int ret = -1;
-
-		close(sync[0]); /* close reading end */
-
-		printf("starting init logger\n");
-
-		workers = &l;
-		lxc_list_init(workers);
-
-		setsig(&sa, SIGTERM, term_handler, SA_RESTART);
-		setsig(&sa, SIGPIPE, SIG_IGN, SA_RESTART);
-
-		int sigfd = setup_signal_fd(&oldmask);
-		if (sigfd < 0) {
-			lxc_log_error("failed to set signal fd handler");
-			goto out;
-		}
-
-		int sock = atoi(sockstr);
-		/* FIXME: testing */
-		/*int sock = open_socket ();
-		  if (sock == -1) {
-		  exit (-1);
-		  }*/
-
-		if (listen(sock, 10) != 0) {
-			lxc_log_syserror ("listen failed");
-			goto out;
-		}
-
-		if (lxc_mainloop_open(8, &descr)) {
-			lxc_log_error("failed to create mainloop");
-			close(sock);
-			goto out;
-		}
-
-		if (lxc_mainloop_add_handler(&descr, sigfd, signal_handler, NULL)) {
-			lxc_log_error("failed to add signal handler");
-			goto out_mainloop_open;
-		}
-
-		if (lxc_mainloop_add_handler(&descr, sock, exec_handler, NULL)) {
-			lxc_log_error("failed to add exec handler");
-			goto out_mainloop_open;
-		}
-
-		int logfd;
-
-		logfd = open_log_pty(&descr, &console);
-
-		if (logfd != -1) {
-			if (lxc_mainloop_add_handler(&descr, logfd,
-						     log_handler_pty, NULL)) {
-				lxc_log_error("failed to add log handler");
-				/* do nothing on error */
-			}
-		} else if  (open_log_fifo(&descr) != -1) {
-			console = LOG_FIFO;
-			lxc_log_info("using fifo for init logger");
-		} else {
-			console = "";
-		}
-
-		write(sync[1], console, strlen(console) + 1);
-		close(sync[1]);
-
-		ret = lxc_mainloop(&descr);
-	  out:
-		printf("stopping init logger\n");
-		exit(ret);
-
-	  out_mainloop_open:
-		lxc_mainloop_close(&descr);
+	int sigfd = setup_signal_fd(&oldmask);
+	if (sigfd < 0) {
+		lxc_log_error("failed to set signal fd handler");
 		goto out;
 	}
 
-	/* normal init */
+	int sock = atoi(sockstr);
+	/* FIXME: testing */
+	/*int sock = open_socket ();
+	  if (sock == -1) {
+	  exit (-1);
+	  }*/
 
-	close(sync[1]);
-	char readbuf[256];
-	int n_read;
-	char *envp[] = {"HOME=/", "TERM=linux", NULL, NULL};
+	if (listen(sock, 10) != 0) {
+		lxc_log_syserror ("listen failed");
+		goto out;
+	}
 
-	char **initargv = argv + 1;
+	if (lxc_mainloop_open(8, &descr)) {
+		lxc_log_error("failed to create mainloop");
+		close(sock);
+		goto out;
+	}
 
-	/* sync */
-	n_read = safe_read(sync[0], readbuf, sizeof (readbuf));
-	if (n_read > 0 && readbuf[n_read] == 0)
-		if (!asprintf(&envp[2], "CONSOLE=%s", readbuf)) {
-			lxc_log_syserror("failed to allocate memory");
-			exit(-1);
+	if (lxc_mainloop_add_handler(&descr, sigfd, signal_handler, NULL)) {
+		lxc_log_error("failed to add signal handler");
+		goto out_mainloop_open;
+	}
+
+	if (lxc_mainloop_add_handler(&descr, sock, exec_handler, NULL)) {
+		lxc_log_error("failed to add exec handler");
+		goto out_mainloop_open;
+	}
+
+	int logfd;
+
+	logfd = open_log_pty(&descr, &console);
+
+	if (logfd != -1) {
+		if (lxc_mainloop_add_handler(&descr, logfd,
+					     log_handler_pty, NULL)) {
+			lxc_log_error("failed to add log handler");
+			/* do nothing on error */
 		}
+	} else if  (open_log_fifo(&descr) != -1) {
+		console = LOG_FIFO;
+		lxc_log_info("using fifo for init logger");
+	} else {
+		console = "";
+	}
 
+	ret = lxc_mainloop(&descr);
+out:
+	printf("stopping init logger\n");
+	exit(ret);
 
-	execve(initargv[0], initargv, envp);
-
-	lxc_log_syserror("failed to exec init");
-
-	exit(-1);
+out_mainloop_open:
+	lxc_mainloop_close(&descr);
+	goto out;
 }
