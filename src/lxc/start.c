@@ -273,13 +273,12 @@ out_sigfd:
 
 int lxc_start(const char *name, char *argv[], unsigned long flags)
 {
-	struct lxc_tty_info tty_info = { 0 };
+	struct lxc_presetup_info presetup_info = { };
 	sigset_t oldmask;
 	char init[MAXPATHLEN];
 	char tty[MAXPATHLEN];
 	char *val = NULL;
 	int fd, sigfd, lock, sv[2], sync = 0, err = -LXC_ERROR_INTERNAL;
-	int sock;
 	pid_t pid;
 	int clone_flags;
 
@@ -298,12 +297,12 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 	if (ttyname_r(0, tty, sizeof(tty)))
 		tty[0] = '\0';
 
-	if (lxc_create_tty(name, &tty_info)) {
+	if (lxc_create_tty(name, &presetup_info.tty_info)) {
 		lxc_log_error("failed to create the ttys");
 		goto out;
 	}
 
-	if (lxc_create_exec(name, &sock)) {
+	if (lxc_create_exec(name, &presetup_info.exec_info)) {
 		lxc_log_error("failed to create 'exec'");
 		goto out;
 	}
@@ -365,7 +364,7 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 		}
 
 		/* Setup the container, ip, names, utsname, ... */
-		err = lxc_setup(name, tty, &tty_info);
+		err = lxc_setup(name, tty, &presetup_info);
 		if (err) {
 			lxc_log_error("failed to setup the container");
 			if (write(sv[0], &err, sizeof(err)) < 0)
@@ -449,7 +448,7 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 		goto err_state_failed;
 	}
 
-	if (mainloop(name, pid, sigfd, &tty_info)) {
+	if (mainloop(name, pid, sigfd, &presetup_info.tty_info)) {
 		lxc_log_error("mainloop exited with an error");
 		goto err_mailoop_failed;
 	}
@@ -465,8 +464,8 @@ out:
 	if (lxc_setstate(name, STOPPED))
 		lxc_log_error("failed to set state %s", lxc_state2str(STOPPED));
 
-	lxc_delete_tty(&tty_info);
-	lxc_delete_exec(sock);
+	lxc_delete_tty(&presetup_info.tty_info);
+	lxc_delete_exec(&presetup_info.exec_info);
 	lxc_unlink_nsgroup(name);
 	unlink(init);
 	free(val);

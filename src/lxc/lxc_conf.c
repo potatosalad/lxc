@@ -850,7 +850,7 @@ static int setup_utsname(const char *name)
 	return 0;
 }
 
-static int setup_exec(const char *name)
+static int setup_exec(const char *name, struct lxc_exec_info *exec_info)
 {
 	int fd, ret;
 	char path[MAXPATHLEN];
@@ -1793,13 +1793,13 @@ void lxc_delete_tty(struct lxc_tty_info *tty_info)
 	tty_info->nbtty = 0;
 }
 
-int lxc_create_exec(const char *name, int *fd)
+int lxc_create_exec(const char *name, struct lxc_exec_info *exec_info)
 {
-	*fd = -1;
+	exec_info->sock = -1;
 
 	if (conf_has_exec(name)) {
-		*fd = lxc_exec_open(name);
-		if (*fd < 0) {
+		exec_info->sock = lxc_exec_open(name);
+		if (exec_info->sock < 0) {
 			lxc_log_syserror("failed to open exec service");
 			return -1;
 		}
@@ -1808,10 +1808,10 @@ int lxc_create_exec(const char *name, int *fd)
 	return 0;
 }
 
-void lxc_delete_exec(int fd)
+void lxc_delete_exec(struct lxc_exec_info *exec_info)
 {
-	if (fd >= 0)
-		lxc_exec_close(fd);
+	if (exec_info->sock >= 0)
+		lxc_exec_close(exec_info->sock);
 }
 
 enum { utsname, network, cgroup, fstab, console, tty, rootfs, pts, exec };
@@ -1862,12 +1862,11 @@ static long make_conf_flagset(const char *name, const char *cons,
 }
 
 int lxc_setup(const char *name, const char *cons,
-	      const struct lxc_tty_info *tty_info)
-
+	      struct lxc_presetup_info *presetup_info)
 {
 	/* store the conf flags set otherwise conf_has will not
 	 * work after chrooting */
-	long flags = make_conf_flagset(name, cons, tty_info);
+	long flags = make_conf_flagset(name, cons, &presetup_info->tty_info);
 
 	if (conf_is_set(flags, utsname) && setup_utsname(name)) {
 		lxc_log_error("failed to setup the utsname for '%s'", name);
@@ -1894,12 +1893,12 @@ int lxc_setup(const char *name, const char *cons,
 		return -LXC_ERROR_SETUP_CONSOLE;
 	}
 
-	if (conf_is_set(flags, tty) && setup_tty(name, tty_info)) {
+	if (conf_is_set(flags, tty) && setup_tty(name, &presetup_info->tty_info)) {
 		lxc_log_error("failed to setup the ttys for '%s'", name);
 		return -LXC_ERROR_SETUP_TTY;
 	}
 
-	if (conf_is_set(flags, exec) && setup_exec(name)) {
+	if (conf_is_set(flags, exec) && setup_exec(name, &presetup_info->exec_info)) {
 		lxc_log_error("failed to setup the exec process for '%s'", name);
 		return -LXC_ERROR_SETUP_EXEC;
 	}

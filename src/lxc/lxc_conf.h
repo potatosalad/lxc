@@ -150,6 +150,15 @@ struct lxc_tty_info {
 	struct lxc_pty_info *pty_info;
 };
 
+struct lxc_exec_info {
+	int sock;
+};
+
+struct lxc_presetup_info {
+	struct lxc_tty_info tty_info;
+	struct lxc_exec_info exec_info;
+};
+
 /*
  * Configure the external resources for the container
  */
@@ -166,14 +175,14 @@ extern int conf_destroy_network(const char *name);
 
 extern int lxc_create_tty(const char *name, struct lxc_tty_info *tty_info);
 extern void lxc_delete_tty(struct lxc_tty_info *tty_info);
-extern int lxc_create_exec(const char *name, int *fd);
-extern void lxc_delete_exec(int fd);
+extern int lxc_create_exec(const char *name, struct lxc_exec_info *exec_info);
+extern void lxc_delete_exec(struct lxc_exec_info *exec_info);
 
 /*
  * Configure the container from inside
  */
 extern int lxc_setup(const char *name, const char *tty, 
-		     const struct lxc_tty_info *tty_info);
+		     struct lxc_presetup_info *presetup_info);
 
 extern int conf_has(const char *name, const char *info);
 
