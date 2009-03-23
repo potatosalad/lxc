@@ -546,6 +546,7 @@ int lxc_config_init(struct lxc_conf *conf)
 	conf->rootfs = NULL;
 	conf->fstab = NULL;
 	conf->utsname = NULL;
+	conf->exec = NULL;
 	conf->tty = 0;
 	conf->pts = 0;
 	lxc_list_init(&conf->cgroup);

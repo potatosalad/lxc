@@ -26,6 +26,12 @@ int lxc_exec_wait(char *cmdsock, int cmdid);
 
 int lxc_exec_kill(char *cmdsock, int cmdid, int signum);
 
+int lxc_exec_open(const char *name);
+
+int lxc_exec_close(int sock);
+
+int lxc_exec_launch(const char *exec, int sock);
+
 char *lxc_pack_command(char *cmd, char *argv[], int *cmdlen);
 
 char **lxc_unpack_command(char *data, int len, char **cmd);

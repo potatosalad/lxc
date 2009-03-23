@@ -116,10 +116,11 @@ struct lxc_cgroup {
  * @utsname : the container utsname
  */
 struct lxc_conf {
-	char *rootfs;
-	char *fstab;
 	int tty;
 	int pts;
+	char *rootfs;
+	char *fstab;
+	char *exec;
 	struct utsname *utsname;
 	struct lxc_list cgroup;
 	struct lxc_list networks;
@@ -165,6 +166,8 @@ extern int conf_destroy_network(const char *name);
 
 extern int lxc_create_tty(const char *name, struct lxc_tty_info *tty_info);
 extern void lxc_delete_tty(struct lxc_tty_info *tty_info);
+extern int lxc_create_exec(const char *name, int *fd);
+extern void lxc_delete_exec(int fd);
 
 /*
  * Configure the container from inside
@@ -182,4 +185,5 @@ extern int conf_has(const char *name, const char *info);
 #define conf_has_cgroup(__name)  conf_has(__name, "cgroup")
 #define conf_has_tty(__name)     conf_has(__name, "tty")
 #define conf_has_pts(__name)     conf_has(__name, "pts")
+#define conf_has_exec(__name)    conf_has(__name, "exec")
 #endif

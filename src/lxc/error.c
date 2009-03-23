@@ -43,6 +43,7 @@ static const char *const catalogue[] = {
 	[LXC_ERROR_CONF_TTY] = "Failed to configure the tty",
 	[LXC_ERROR_CONF_ROOTFS] = "Failed to configure the root fs",
 	[LXC_ERROR_CONF_PTS] = "Failed to configure the pts",
+	[LXC_ERROR_CONF_EXEC] = "Failed to configure the exec daemon",
 
 	[LXC_ERROR_SETUP_CGROUP] = "Failed to setup the control group",
 	[LXC_ERROR_SETUP_MOUNT] = "Failed to setup the mount points",
@@ -52,6 +53,7 @@ static const char *const catalogue[] = {
 	[LXC_ERROR_SETUP_TTY] = "Failed to setup the tty",
 	[LXC_ERROR_SETUP_ROOTFS] = "Failed to setup the root fs",
 	[LXC_ERROR_SETUP_PTS] = "Failed to setup the new pts instance",
+	[LXC_ERROR_SETUP_EXEC] = "Failed to setup the exec daemon",
 
 	[LXC_ERROR_TTY_DENIED] = "tty service denied",
 	[LXC_ERROR_TTY_EAGAIN] = "tty service is not available",

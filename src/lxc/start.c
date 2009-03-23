@@ -279,6 +279,7 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 	char tty[MAXPATHLEN];
 	char *val = NULL;
 	int fd, sigfd, lock, sv[2], sync = 0, err = -LXC_ERROR_INTERNAL;
+	int sock;
 	pid_t pid;
 	int clone_flags;
 
@@ -302,6 +303,11 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 		goto out;
 	}
 
+	if (lxc_create_exec(name, &sock)) {
+		lxc_log_error("failed to create 'exec'");
+		goto out;
+	}
+
 	/* the signal fd has to be created before forking otherwise
 	 * if the child process exits before we setup the signal fd,
 	 * the event will be lost and the command will be stuck */
@@ -320,31 +326,6 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 	/* Avoid signals from terminal */
 	LXC_TTY_ADD_HANDLER(SIGINT);
 	LXC_TTY_ADD_HANDLER(SIGQUIT);
-
-	/* open command socket */
-	struct sockaddr_un addr;
-
-	char *cmdsock;
-
-	asprintf (&cmdsock, LXCPATH "/%s/cmdsock", name);
-	unlink (cmdsock);
-
-	int sock = socket (PF_UNIX, SOCK_STREAM, 0);
-	if (sock == -1) {
-		lxc_log_syserror ("faild to create socket");
-		goto out;
-	}
-
-	memset(&addr, 0, sizeof(struct sockaddr_un));
-
-	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path, cmdsock, sizeof(addr.sun_path) - 1);
-
-	if (bind(sock, (struct sockaddr *) &addr,
-		 sizeof(struct sockaddr_un)) == -1) {
-		lxc_log_syserror ("command socket bind failed");
-		goto out;
-	}
 
 	clone_flags = CLONE_NEWPID|CLONE_NEWIPC|CLONE_NEWNS;
 	if (conf_has_utsname(name))
@@ -397,27 +378,7 @@ int lxc_start(const char *name, char *argv[], unsigned long flags)
 			goto out_child;
 		}
 
-		char *sockstr;
-		char *flagsstr;
-		asprintf(&sockstr, "SOCK=%d\n", sock);
-		asprintf(&flagsstr, "FLAGS=%ul\n", flags);
-
-		char *envp[] = {sockstr, flagsstr, NULL};
-
-		int argc = 0;
-		while (argv[argc]) argc++;
-
-		char **newargv = calloc (argc + 2, sizeof (char*));
-
-		newargv[0] = "[lxc-cinit]";
-		int i = 0;
-		while (argv[i])  {
-			newargv[i + 1] = argv[i];
-			i++;
-		}
-
-		execve("/sbin/lxc-cinit", newargv, envp);
-
+		execvp(argv[0], argv);
 		lxc_log_syserror("failed to exec %s", argv[0]);
 
 		err = LXC_ERROR_WRONG_COMMAND;
@@ -505,6 +466,7 @@ out:
 		lxc_log_error("failed to set state %s", lxc_state2str(STOPPED));
 
 	lxc_delete_tty(&tty_info);
+	lxc_delete_exec(sock);
 	lxc_unlink_nsgroup(name);
 	unlink(init);
 	free(val);

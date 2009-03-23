@@ -670,6 +670,23 @@ out_open:
 	goto out;
 }
 
+static int configure_exec(const char *name, char *exec)
+{
+	char path[MAXPATHLEN];
+
+	snprintf(path, MAXPATHLEN, LXCPATH "/%s", name);
+
+	if (!strlen(exec))
+		exec = LXCBINDIR "/lxc-cinit";
+
+	if (write_info(path, "exec", exec)) {
+		lxc_log_syserror("failed to configure 'exec' file");
+		return -1;
+	}
+
+	return 0;
+}
+
 static int unconfigure_ip_addresses(const char *directory)
 {
 	char path[MAXPATHLEN];
@@ -799,6 +816,16 @@ static int unconfigure_utsname(const char *name)
 	return 0;
 }
 
+static int unconfigure_exec(const char *name)
+{
+	char path[MAXPATHLEN];
+
+	snprintf(path, MAXPATHLEN, LXCPATH "/%s", name);
+	delete_info(path, "exec");
+
+	return 0;
+}
+
 static int setup_utsname(const char *name)
 {
 	int ret;
@@ -817,6 +844,49 @@ static int setup_utsname(const char *name)
 	if (!ret && sethostname(utsname.nodename, strlen(utsname.nodename))) {
 		lxc_log_syserror("failed to set the hostname to '%s'",
 				 utsname.nodename);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int setup_exec(const char *name)
+{
+	int fd, ret;
+	char path[MAXPATHLEN];
+	char src[MAXPATHLEN];
+	char dst[MAXPATHLEN];
+
+	snprintf(path, MAXPATHLEN, LXCPATH "/%s", name);
+
+	ret = read_info(path, "exec", src, sizeof(src));
+	if (ret < 0) {
+		lxc_log_syserror("failed to read exec info");
+		return -1;
+	}
+
+	if (conf_has_rootfs(name))
+		snprintf(dst, MAXPATHLEN,
+			 LXCPATH "/%s/rootfs/sbin/lxc-cinit", name);
+	else
+		snprintf(dst, MAXPATHLEN, "/sbin/lxc-cinit");
+
+	if (access(dst, F_OK)) {
+		fd = creat(dst, 0700);
+		if (fd < 0) {
+			lxc_log_syserror("failed to create '%s'", dst);
+			return -1;
+		}
+		close(fd);
+	}
+
+	if (access(dst, R_OK | W_OK | X_OK)) {
+		lxc_log_syserror("'%s' has not the right permission", dst);
+		return -1;
+	}
+
+	if (mount(src, dst, "none", MS_BIND, 0)) {
+		lxc_log_syserror("failed to mount '%s'->'%s'", src, dst);
 		return -1;
 	}
 
@@ -842,7 +912,7 @@ static int setup_tty(const char *name, const struct lxc_tty_info *tty_info)
 		 * to check the file is present or not because it fails
 		 * with EACCES errno and I don't know why :( */
 
-		if (mount(pty_info->name, path, "none", MS_BIND, 0)) {
+ 		if (mount(pty_info->name, path, "none", MS_BIND, 0)) {
 			lxc_log_warning("failed to mount '%s'->'%s'",
 					pty_info->name, path);
 			continue;
@@ -855,16 +925,6 @@ static int setup_tty(const char *name, const struct lxc_tty_info *tty_info)
 static int setup_rootfs(const char *name)
 {
 	char path[MAXPATHLEN];
-	char cmd[MAXPATHLEN*3];
-
-	char *ilsrc = LXCBINDIR "/lxc-cinit";
-
-	snprintf(cmd, MAXPATHLEN*3, "cp %s " LXCPATH "/%s/rootfs/sbin/lxc-cinit",
-		 ilsrc, name);
-	if (system (cmd) != 0) {
-		lxc_log_syserror("copy lxc-cinit failed");
-		return -1;
-	}
 
 	snprintf(path, MAXPATHLEN, LXCPATH "/%s/rootfs", name);
 
@@ -1341,6 +1401,11 @@ int lxc_configure(const char *name, struct lxc_conf *conf)
 		return -LXC_ERROR_CONF_PTS;
 	}
 
+	if (conf->exec && configure_exec(name, conf->exec)) {
+		lxc_log_error("failed to configure the exec daemon");
+		return -LXC_ERROR_CONF_EXEC;
+	}
+
 	return 0;
 }
 
@@ -1366,6 +1431,9 @@ int lxc_unconfigure(const char *name)
 
 	if (conf_has_pts(name) && unconfigure_pts(name))
 		lxc_log_error("failed to cleanup pts");
+
+	if (conf_has_exec(name) && unconfigure_exec(name))
+		lxc_log_error("failed to cleanup exec");
 
 	return 0;
 }
@@ -1725,7 +1793,28 @@ void lxc_delete_tty(struct lxc_tty_info *tty_info)
 	tty_info->nbtty = 0;
 }
 
-enum { utsname, network, cgroup, fstab, console, tty, rootfs, pts };
+int lxc_create_exec(const char *name, int *fd)
+{
+	*fd = -1;
+
+	if (conf_has_exec(name)) {
+		*fd = lxc_exec_open(name);
+		if (*fd < 0) {
+			lxc_log_syserror("failed to open exec service");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+void lxc_delete_exec(int fd)
+{
+	if (fd >= 0)
+		lxc_exec_close(fd);
+}
+
+enum { utsname, network, cgroup, fstab, console, tty, rootfs, pts, exec };
 
 static int conf_is_set(long flags, int subsystem)
 {
@@ -1759,6 +1848,9 @@ static long make_conf_flagset(const char *name, const char *cons,
 
 	if (conf_has_pts(name))
 		conf_set_flag(&flags, pts);
+
+	if (conf_has_exec(name))
+		conf_set_flag(&flags, exec);
 
 	if (tty_info->nbtty)
 		conf_set_flag(&flags, tty);
@@ -1805,6 +1897,11 @@ int lxc_setup(const char *name, const char *cons,
 	if (conf_is_set(flags, tty) && setup_tty(name, tty_info)) {
 		lxc_log_error("failed to setup the ttys for '%s'", name);
 		return -LXC_ERROR_SETUP_TTY;
+	}
+
+	if (conf_is_set(flags, exec) && setup_exec(name)) {
+		lxc_log_error("failed to setup the exec process for '%s'", name);
+		return -LXC_ERROR_SETUP_EXEC;
 	}
 
 	if (conf_is_set(flags, rootfs) && setup_rootfs(name)) {
