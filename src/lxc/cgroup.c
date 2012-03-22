@@ -53,33 +53,37 @@ enum {
 	CGROUP_CLONE_CHILDREN,
 };
 
-static char *hasmntopt_multiple(struct mntent *mntent, const char *options)
+/* Check if a mount is a cgroup hierarchy for any subsystem.
+ * Return the first subsystem found (or NULL if none).
+ */
+static char *mount_has_subsystem(const struct mntent *mntent)
 {
-	const char *ptr = options;
-	const char *ptr2 = strchr(options, ',');
-	char *result;
+	FILE *f;
+	char *c, *ret;
+	char line[MAXPATHLEN];
 
-	while (ptr2 != NULL) {
-		char *option = strndup(ptr, ptr2 - ptr);
-		if (!option) {
-			SYSERROR("Temporary memory allocation error");
-			return NULL;
-		}
+	/* read the list of subsystems from the kernel */
+	f = fopen("/proc/cgroups", "r");
+	if (!f)
+		return 0;
 
-		result = hasmntopt(mntent, option);
-		free(option);
+	/* skip the first line, which contains column headings */
+	if (!fgets(line, MAXPATHLEN, f))
+		return 0;
 
-		if (!result) {
-			return NULL;
-		}
+	while (fgets(line, MAXPATHLEN, f)) {
+		c = strchr(line, '\t');
+		if (!c)
+			continue;
+		*c = '\0';
 
-		ptr = ptr2 + 1;
-		ptr2 = strchr(ptr, ',');
+		ret = hasmntopt(mntent, line);
+		if (ret)
+			break;
 	}
 
-	/* for multiple mount options, the return value is basically NULL
-	 * or non-NULL, so this should suffice for our purposes */
-	return hasmntopt(mntent, ptr);
+	fclose(f);
+	return ret;
 }
 
 /*
@@ -157,6 +161,7 @@ static int get_cgroup_mount(const char *subsystem, char *mnt)
 	struct mntent *mntent;
 	char initcgroup[MAXPATHLEN];
 	FILE *file = NULL;
+	int ret, flags, err = -1;
 
 	file = setmntent(MTAB, "r");
 	if (!file) {
@@ -165,32 +170,36 @@ static int get_cgroup_mount(const char *subsystem, char *mnt)
 	}
 
 	while ((mntent = getmntent(file))) {
-
 		if (strcmp(mntent->mnt_type, "cgroup"))
 			continue;
-		if (!subsystem || hasmntopt_multiple(mntent, subsystem)) {
-			int ret;
-			int flags = get_cgroup_flags(mntent);
-			ret = snprintf(mnt, MAXPATHLEN, "%s%s%s",
-				       mntent->mnt_dir,
-				       get_init_cgroup(subsystem, NULL,
-						       initcgroup),
-				       (flags & CGROUP_NS_CGROUP) ? "" : "/lxc");
-			if (ret < 0 || ret >= MAXPATHLEN)
-				goto fail;
-			fclose(file);
-			DEBUG("using cgroup mounted at '%s'", mnt);
-			return 0;
+
+		if (subsystem) {
+			if (!hasmntopt(mntent, subsystem))
+				continue;
 		}
+		else {
+			if (!mount_has_subsystem(mntent))
+				continue;
+		}
+
+		flags = get_cgroup_flags(mntent);
+		ret = snprintf(mnt, MAXPATHLEN, "%s%s%s", mntent->mnt_dir,
+			       get_init_cgroup(subsystem, NULL, initcgroup),
+		               (flags & CGROUP_NS_CGROUP) ? "" : "/lxc");
+		if (ret < 0 || ret >= MAXPATHLEN)
+			goto fail;
+
+		DEBUG("using cgroup mounted at '%s'", mnt);
+		err = 0;
+		goto out;
 	};
 
 fail:
 	DEBUG("Failed to find cgroup for %s\n",
 	      subsystem ? subsystem : "(NULL)");
-
-	fclose(file);
-
-	return -1;
+out:
+	endmntent(file);
+	return err;
 }
 
 int lxc_ns_is_mounted(void)
@@ -245,13 +254,20 @@ static int cgroup_enable_clone_children(const char *path)
 	return ret;
 }
 
-int lxc_cgroup_attach(const char *path, pid_t pid)
+static int lxc_one_cgroup_attach(const char *name,
+				 struct mntent *mntent, pid_t pid)
 {
 	FILE *f;
-	char tasks[MAXPATHLEN];
-	int ret = 0;
+	char tasks[MAXPATHLEN], initcgroup[MAXPATHLEN];
+	char *cgmnt = mntent->mnt_dir;
+	int flags, ret = 0;
 
-	snprintf(tasks, MAXPATHLEN, "%s/tasks", path);
+	flags = get_cgroup_flags(mntent);
+
+	snprintf(tasks, MAXPATHLEN, "%s%s%s/%s/tasks", cgmnt,
+	         get_init_cgroup(NULL, mntent, initcgroup),
+	         (flags & CGROUP_NS_CGROUP) ? "" : "/lxc",
+	         name);
 
 	f = fopen(tasks, "w");
 	if (!f) {
@@ -267,6 +283,46 @@ int lxc_cgroup_attach(const char *path, pid_t pid)
 	fclose(f);
 
 	return ret;
+}
+
+/*
+ * for each mounted cgroup, attach a pid to the cgroup for the container
+ */
+int lxc_cgroup_attach(const char *name, pid_t pid)
+{
+	struct mntent *mntent;
+	FILE *file = NULL;
+	int err = -1;
+	int found = 0;
+
+	file = setmntent(MTAB, "r");
+	if (!file) {
+		SYSERROR("failed to open %s", MTAB);
+		return -1;
+	}
+
+	while ((mntent = getmntent(file))) {
+		DEBUG("checking '%s' (%s)", mntent->mnt_dir, mntent->mnt_type);
+
+		if (strcmp(mntent->mnt_type, "cgroup"))
+			continue;
+		if (!mount_has_subsystem(mntent))
+			continue;
+
+		INFO("[%d] found cgroup mounted at '%s',opts='%s'",
+		     ++found, mntent->mnt_dir, mntent->mnt_opts);
+
+		err = lxc_one_cgroup_attach(name, mntent, pid);
+		if (err)
+			goto out;
+	};
+
+	if (!found)
+		ERROR("No cgroup mounted on the system");
+
+out:
+	endmntent(file);
+	return err;
 }
 
 /*
@@ -379,20 +435,13 @@ static int lxc_one_cgroup_create(const char *name,
 		return -1;
 	}
 
-	/* Let's add the pid to the 'tasks' file */
-	if (lxc_cgroup_attach(cgname, pid)) {
-		SYSERROR("failed to attach pid '%d' to '%s'", pid, cgname);
-		rmdir(cgname);
-		return -1;
-	}
-
 	INFO("created cgroup '%s'", cgname);
 
 	return 0;
 }
 
 /*
- * for each mounted cgroup, create a cgroup for the container
+ * for each mounted cgroup, create a cgroup for the container and attach a pid
  */
 int lxc_cgroup_create(const char *name, pid_t pid)
 {
@@ -408,18 +457,23 @@ int lxc_cgroup_create(const char *name, pid_t pid)
 	}
 
 	while ((mntent = getmntent(file))) {
-
 		DEBUG("checking '%s' (%s)", mntent->mnt_dir, mntent->mnt_type);
 
-		if (!strcmp(mntent->mnt_type, "cgroup")) {
+		if (strcmp(mntent->mnt_type, "cgroup"))
+			continue;
+		if (!mount_has_subsystem(mntent))
+			continue;
 
-			INFO("[%d] found cgroup mounted at '%s',opts='%s'",
-			     ++found, mntent->mnt_dir, mntent->mnt_opts);
+		INFO("[%d] found cgroup mounted at '%s',opts='%s'",
+		     ++found, mntent->mnt_dir, mntent->mnt_opts);
 
-			err = lxc_one_cgroup_create(name, mntent, pid);
-			if (err)
-				goto out;
-		}
+		err = lxc_one_cgroup_create(name, mntent, pid);
+		if (err)
+			goto out;
+
+		err = lxc_one_cgroup_attach(name, mntent, pid);
+		if (err)
+			goto out;
 	};
 
 	if (!found)
@@ -497,7 +551,7 @@ int lxc_cgroup_destroy(const char *name)
 {
 	struct mntent *mntent;
 	FILE *file = NULL;
-	int ret, err = -1;
+	int err = -1;
 
 	file = setmntent(MTAB, "r");
 	if (!file) {
@@ -506,18 +560,17 @@ int lxc_cgroup_destroy(const char *name)
 	}
 
 	while ((mntent = getmntent(file))) {
-		if (!strcmp(mntent->mnt_type, "cgroup")) {
-			ret = lxc_one_cgroup_destroy(mntent, name);
-			if (ret) {
-				fclose(file);
-				return ret;
-			}
-			err = 0;
-		}
+		if (strcmp(mntent->mnt_type, "cgroup"))
+			continue;
+		if (!mount_has_subsystem(mntent))
+			continue;
+
+		err = lxc_one_cgroup_destroy(mntent, name);
+		if (err)
+			break;
 	}
 
-	fclose(file);
-
+	endmntent(file);
 	return err;
 }
 /*
@@ -530,8 +583,8 @@ int lxc_cgroup_path_get(char **path, const char *subsystem, const char *name)
 	static char        buf[MAXPATHLEN];
 	static char        retbuf[MAXPATHLEN];
 
-	/* what lxc_cgroup_set calls subsystem is actually the filename, i.e.
-	   'devices.allow'.  So for our purposee we trim it */
+	/* lxc_cgroup_set passes a state object for the subsystem,
+	 * so trim it to just the subsystem part */
 	if (subsystem) {
 		snprintf(retbuf, MAXPATHLEN, "%s", subsystem);
 		char *s = index(retbuf, '.');

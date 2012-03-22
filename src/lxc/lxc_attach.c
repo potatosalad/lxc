@@ -35,7 +35,7 @@
 #include "commands.h"
 #include "arguments.h"
 #include "caps.h"
-#include "attach.h"
+#include "cgroup.h"
 #include "confile.h"
 #include "start.h"
 #include "sync.h"
@@ -89,7 +89,7 @@ Options :\n\
 	.checker  = NULL,
 };
 
-int main(int argc, char *argv[], char *envp[])
+int main(int argc, char *argv[])
 {
 	int ret;
 	pid_t pid, init_pid;
@@ -150,7 +150,7 @@ int main(int argc, char *argv[], char *envp[])
 		if (lxc_sync_wait_child(handler, LXC_SYNC_CONFIGURE))
 			return -1;
 
-		if (!elevated_privileges && lxc_attach_proc_to_cgroups(pid, init_ctx))
+		if (!elevated_privileges && lxc_cgroup_attach(my_args.name, pid))
 			return -1;
 
 		/* tell the child we are done initializing */
@@ -212,7 +212,7 @@ int main(int argc, char *argv[], char *envp[])
 		lxc_sync_fini(handler);
 
 		if (my_args.argc) {
-			execve(my_args.argv[0], my_args.argv, envp);
+			execvp(my_args.argv[0], my_args.argv);
 			SYSERROR("failed to exec '%s'", my_args.argv[0]);
 			return -1;
 		}
@@ -232,7 +232,7 @@ int main(int argc, char *argv[], char *envp[])
 				NULL,
 			};
 
-			execve(args[0], args, envp);
+			execvp(args[0], args);
 			SYSERROR("failed to exec '%s'", args[0]);
 			return -1;
 		}
