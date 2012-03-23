@@ -1,4 +1,4 @@
-NAME=lxc
+NAME=lxc-pagoda
 VERSION=0.8.0-rc2_david
 PKGVERSION=0.8.0~rc2~david
 DOWNLOAD=git://github.com/potatosalad/lxc.git
