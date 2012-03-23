@@ -51,7 +51,11 @@ build: $(TARDIR) $(BUILDAREA)
 
 .PHONY: deb
 deb: build
-	fpm -s dir -t deb -v $(PKGVERSION) -n $(NAME) --conflicts 'cgroup-bin' \
+	fpm -s dir -t deb -v $(PKGVERSION) -n $(NAME) \
+		--conflicts 'cgroup-bin' \
+		--conflicts 'lxc' \
+		--conflicts 'lxc-dbg' \
+		--conflicts 'lxc-dev' \
 		--depends 'debconf (>= 0.5) | debconf-2.0' \
 		--depends 'libc6 (>= 2.8)' \
 		--depends 'libcap2 (>= 2.10)' \
