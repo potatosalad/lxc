@@ -20,7 +20,6 @@ clean:
 	rm -fr $(TARDIR) || true
 	rm -fr /tmp/$(BUILDAREA) || true
 	rm -f *.deb
-	rm -f *.rpm
 
 $(NAME):
 	test -d .git || git clone $(DOWNLOAD)
@@ -40,6 +39,7 @@ $(BUILDAREA):
 #--with-rootfs-path=$(PREFIX)/lib/x86_64-linux-gnu/lxc
 
 build: $(TARDIR) $(BUILDAREA)
+	@echo "Make sure you have: apt-get install debhelper autotools-dev docbook-utils libcap-dev linux-libc-dev"
 	cd $(TARDIR); \
 	./autogen.sh; \
 	./configure \
@@ -53,13 +53,8 @@ build: $(TARDIR) $(BUILDAREA)
 deb: build
 	fpm -s dir -t deb -v $(PKGVERSION) -n $(NAME) --conflicts 'cgroup-bin' \
 		--depends 'debconf (>= 0.5) | debconf-2.0' \
-		--depends 'debhelper (>= 9)' \
-		--depends 'autotools-dev' \
-		--depends 'docbook-utils' \
 		--depends 'libc6 (>= 2.8)' \
 		--depends 'libcap2 (>= 2.10)' \
-		--depends 'libcap-dev' \
-		--depends 'linux-libc-dev' \
 		--deb-pre-depends 'multiarch-support' \
 		--maintainer 'Andrew Bennett <andrew@delorum.com>' \
 		--url 'http://lxc.sourceforge.net/' \
