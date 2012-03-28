@@ -332,14 +332,16 @@ out:
  */
 int try_to_move_cgname(char *cgparent, char *cgname)
 {
-	char *newdir;
+	char *newdir, *name;
 
 	/* tempnam problems don't matter here - cgroupfs will prevent
 	 * duplicates if we race, and we'll just fail at that (unlikely)
 	 * point
 	 */
 
+	name   = &strrchr(cgname,'/')[1];
 	newdir = tempnam(cgparent, "dead");
+	sprintf(newdir, "%s-%s", newdir, name);
 	if (!newdir)
 		return -1;
 	if (rename(cgname, newdir))
